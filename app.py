@@ -103,15 +103,92 @@ def style_fig(fig, height=420):
 # ----------------------------------------------------------------------------
 # DATA LOADING
 # ----------------------------------------------------------------------------
+import os
+import glob
+
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def find_dataset():
+    """Search common locations/filenames for the sales CSV so the app
+    doesn't break due to working-directory or filename differences
+    between local runs and Streamlit Cloud deployments."""
+    candidates = [
+        os.path.join(APP_DIR, "data", "vgsales.csv"),
+        os.path.join(APP_DIR, "vgsales.csv"),
+        os.path.join(APP_DIR, "data", "vgchartz-2024.csv"),
+        "data/vgsales.csv",
+        "vgsales.csv",
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+    # fall back: search the whole app dir for any csv with "sales" or "vg" in the name
+    for pattern in ["**/*vgsales*.csv", "**/*vgchartz*.csv", "**/*sales*.csv"]:
+        matches = glob.glob(os.path.join(APP_DIR, pattern), recursive=True)
+        if matches:
+            return matches[0]
+    return None
+
 @st.cache_data
-def load_data(path="data/vgsales.csv"):
+def load_data(path):
     df = pd.read_csv(path)
+
+    # normalize column names in case the uploaded/real Kaggle file uses
+    # slightly different naming (e.g. vgchartz variants)
+    rename_map = {
+        "na_sales": "NA_Sales", "eu_sales": "EU_Sales", "jp_sales": "JP_Sales",
+        "other_sales": "Other_Sales", "global_sales": "Global_Sales",
+        "name": "Name", "platform": "Platform", "year": "Year",
+        "genre": "Genre", "publisher": "Publisher", "rank": "Rank",
+    }
+    df.columns = [rename_map.get(c.strip().lower(), c) for c in df.columns]
+
+    required = ["Name", "Platform", "Genre", "Publisher",
+                "NA_Sales", "EU_Sales", "JP_Sales", "Other_Sales", "Global_Sales"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"Dataset is missing required columns: {missing}. Found columns: {list(df.columns)}")
+
+    if "Year" not in df.columns:
+        df["Year"] = np.nan
+    if "Rank" not in df.columns:
+        df["Rank"] = range(1, len(df) + 1)
+
     df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
+    for col in ["NA_Sales", "EU_Sales", "JP_Sales", "Other_Sales", "Global_Sales"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
     df["Publisher"] = df["Publisher"].fillna("Unknown")
     df = df.dropna(subset=["Global_Sales"])
     return df
 
-df_raw = load_data()
+dataset_path = find_dataset()
+
+if dataset_path is None:
+    st.error(
+        "**Couldn't find the dataset CSV.** I looked for `data/vgsales.csv` "
+        "(and a few other common names/locations) relative to `app.py` but "
+        "didn't find any file.\n\n"
+        "**Fix:** make sure `data/vgsales.csv` is committed to your GitHub repo "
+        "(check it's not excluded by `.gitignore`, and that it actually shows up "
+        "in the GitHub file browser for your repo — large files sometimes fail to "
+        "push silently). If your file has a different name, either rename it to "
+        "`data/vgsales.csv` or edit the `candidates` list in `find_dataset()` in `app.py`."
+    )
+    with st.expander("Debug info"):
+        st.write("App directory:", APP_DIR)
+        st.write("Files found in app directory:")
+        for root, dirs, files in os.walk(APP_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                st.write(os.path.relpath(os.path.join(root, f), APP_DIR))
+    st.stop()
+
+try:
+    df_raw = load_data(dataset_path)
+except Exception as e:
+    st.error(f"Found a dataset file at `{dataset_path}` but couldn't load it: {e}")
+    st.stop()
 
 REGION_COLS = ["NA_Sales", "EU_Sales", "JP_Sales", "Other_Sales"]
 REGION_LABELS = {"NA_Sales": "North America", "EU_Sales": "Europe",
