@@ -1,0 +1,15 @@
+[theme]
+# Base is "auto" is not natively supported in config.toml, so we set a
+# balanced theme with a strong accent color that reads well on both
+# light and dark backgrounds. Users can still toggle light/dark from the
+# Streamlit menu (⋮ > Settings > Theme) and the dashboard adapts because
+# app.py uses CSS variables (var(--secondary-background-color) etc.)
+# instead of hardcoded colors, and Plotly charts use transparent backgrounds.
+primaryColor = "#7C4DFF"
+backgroundColor = "#0E1117"
+secondaryBackgroundColor = "#1B1F27"
+textColor = "#FAFAFA"
+font = "sans serif"
+
+[server]
+headless = true
